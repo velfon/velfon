@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Bubble Bobble Clone</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #000;
+        }
+        canvas {
+            border: 2px solid #fff;
+            background-color: #111;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // Game constants
+        const GRAVITY = 0.6;
+        const FRICTION = 0.9;
+
+        // Game state
+        let score = 0;
+        let lives = 3;
+
+        // Player
+        const player = {
+            x: canvas.width / 2 - 25,
+            y: canvas.height - 50,
+            width: 50,
+            height: 50,
+            speed: 5,
+            dx: 0, // change in x
+            dy: 0, // change in y
+            jumpPower: 15,
+            isJumping: false,
+            color: 'cyan',
+            direction: 'right',
+            invincible: 0 // invincibility timer
+        };
+
+        // Bubbles
+        const bubbles = [];
+        const BUBBLE_SPEED = 4;
+        const BUBBLE_LIFESPAN = 240; // frames
+
+        // Enemies
+        const enemies = [];
+        const ENEMY_SPEED = 1.5;
+
+        // Stage Management
+        let currentStage = 0;
+        let gameMessage = '';
+        let messageTimer = 0;
+        const platforms = [];
+
+        const stageData = [
+            // Stage 1
+            {
+                enemies: [
+                    { x: 100, y: 50, speed: 1.5, direction: 1 },
+                    { x: 600, y: 50, speed: 1.5, direction: -1 }
+                ],
+                platforms: [
+                    { x: 250, y: 450, width: 300 },
+                    { x: 100, y: 350, width: 150 },
+                    { x: 550, y: 350, width: 150 },
+                    { x: 300, y: 250, width: 200 }
+                ]
+            },
+            // Stage 2
+            {
+                enemies: [
+                    { x: 100, y: 50, speed: 1.8, direction: 1 },
+                    { x: 600, y: 50, speed: 1.8, direction: -1 },
+                    { x: 350, y: 100, speed: 1.2, direction: 1 }
+                ],
+                platforms: [
+                    { x: 0, y: 480, width: 200 },
+                    { x: 600, y: 480, width: 200 },
+                    { x: 250, y: 380, width: 300 },
+                    { x: 0, y: 280, width: 200 },
+                    { x: 600, y: 280, width: 200 }
+                ]
+            },
+            // Stage 3
+            {
+                enemies: [
+                    { x: 50, y: 50, speed: 2, direction: 1 },
+                    { x: 700, y: 50, speed: 2, direction: -1 },
+                    { x: 150, y: 100, speed: 2, direction: 1 },
+                    { x: 600, y: 100, speed: 2, direction: -1 }
+                ],
+                platforms: [
+                    { x: 150, y: 500, width: 500 },
+                    { x: 200, y: 400, width: 400 },
+                    { x: 250, y: 300, width: 300 },
+                    { x: 300, y: 200, width: 200 }
+                ]
+            }
+        ];
+
+
+        // Keyboard input
+        const keys = {
+            left: false,
+            right: false,
+            up: false
+        };
+
+        function shootBubble() {
+            // Limit number of bubbles on screen
+            if (bubbles.length >= 4) return;
+
+            const bubble = {
+                x: player.x + player.width / 2,
+                y: player.y + player.height / 2,
+                radius: 12,
+                dx: player.direction === 'right' ? BUBBLE_SPEED : -BUBBLE_SPEED,
+                dy: 0,
+                life: BUBBLE_LIFESPAN,
+                color: 'rgba(255, 255, 255, 0.7)',
+                borderColor: '#fff',
+                isTrapping: false,
+                trappedEnemy: null
+            };
+            bubbles.push(bubble);
+        }
+
+        function keyDownHandler(e) {
+            // If game is over, any key press should reset it
+            if ((lives <= 0 || currentStage >= stageData.length) && messageTimer > 60) {
+                resetLevel();
+                return;
+            }
+
+            if (e.key === 'ArrowLeft' || e.key === 'a') {
+                keys.left = true;
+            } else if (e.key === 'ArrowRight' || e.key === 'd') {
+                keys.right = true;
+            } else if ((e.key === 'ArrowUp' || e.key === 'w' || e.key === ' ') && !player.isJumping) {
+                player.isJumping = true;
+                player.dy = -player.jumpPower;
+            } else if (e.key === 'z' || e.key === 'x') {
+                shootBubble();
+            }
+        }
+
+        function keyUpHandler(e) {
+            if (e.key === 'ArrowLeft' || e.key === 'a') {
+                keys.left = false;
+            } else if (e.key === 'ArrowRight' || e.key === 'd') {
+                keys.right = false;
+            }
+        }
+
+        document.addEventListener('keydown', keyDownHandler);
+        document.addEventListener('keyup', keyUpHandler);
+
+        function updatePlayer() {
+            // Horizontal movement
+            if (keys.left) {
+                player.dx = -player.speed;
+                player.direction = 'left';
+            } else if (keys.right) {
+                player.dx = player.speed;
+                player.direction = 'right';
+            }
+
+            // Apply velocity
+            player.x += player.dx;
+            player.y += player.dy;
+
+            // Apply friction
+            player.dx *= FRICTION;
+
+            if (player.invincible > 0) {
+                player.invincible--;
+            }
+
+            // Apply gravity
+            player.dy += GRAVITY;
+
+            // Platform collision
+            let onPlatform = false;
+            platforms.forEach(p => {
+                if (player.dy > 0 &&
+                    player.x + player.width > p.x && player.x < p.x + p.width &&
+                    player.y + player.height >= p.y && player.y + player.height <= p.y + p.height + player.dy) {
+                    player.y = p.y - player.height;
+                    player.dy = 0;
+                    player.isJumping = false;
+                    onPlatform = true;
+                }
+            });
+
+            // Floor collision
+            if (!onPlatform && player.y + player.height > canvas.height) {
+                player.y = canvas.height - player.height;
+                player.dy = 0;
+                player.isJumping = false;
+            }
+
+            // Wall collision
+            if (player.x < 0) {
+                player.x = 0;
+                player.dx = 0;
+            }
+            if (player.x + player.width > canvas.width) {
+                player.x = canvas.width - player.width;
+                player.dx = 0;
+            }
+        }
+
+        function drawPlayer() {
+            // Flashing effect when invincible
+            if (player.invincible > 0) {
+                // Flash every 10 frames
+                if (Math.floor(player.invincible / 10) % 2 === 0) {
+                    ctx.globalAlpha = 0.5;
+                }
+            }
+
+            ctx.fillStyle = player.color;
+            ctx.fillRect(player.x, player.y, player.width, player.height);
+
+            // Reset alpha
+            ctx.globalAlpha = 1.0;
+        }
+
+        function updateBubbles() {
+            for (let i = bubbles.length - 1; i >= 0; i--) {
+                const b = bubbles[i];
+
+                if (b.isTrapping) {
+                    b.y -= 0.8; // Float up
+                    b.dx = 0;   // Stop horizontal movement
+                } else {
+                    b.x += b.dx;
+                    b.y += Math.sin(b.x / 20) * 0.5; // Gentle wavy motion
+                }
+
+                b.life--;
+
+                // Remove bubble if its life ends
+                if (b.life <= 0) {
+                    if (b.isTrapping && b.trappedEnemy) {
+                        // Free the enemy if it's still there
+                        b.trappedEnemy.state = 'normal';
+                        b.trappedEnemy.dx = Math.random() < 0.5 ? ENEMY_SPEED : -ENEMY_SPEED;
+                    }
+                    bubbles.splice(i, 1);
+                } else if (!b.isTrapping && (b.x - b.radius > canvas.width || b.x + b.radius < 0)) {
+                    // Remove if off-screen (but only if not trapping an enemy)
+                     bubbles.splice(i, 1);
+                }
+            }
+        }
+
+        function drawBubbles() {
+            bubbles.forEach(b => {
+                ctx.beginPath();
+                ctx.arc(b.x, b.y, b.radius, 0, Math.PI * 2);
+                ctx.fillStyle = b.color;
+                ctx.fill();
+                ctx.strokeStyle = b.borderColor;
+                ctx.stroke();
+            });
+        }
+
+        function clearCanvas() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
+
+        function drawPlatforms() {
+            ctx.fillStyle = '#777';
+            platforms.forEach(p => {
+                ctx.fillRect(p.x, p.y, p.width, p.height);
+            });
+        }
+
+        function loadStage(stageIndex) {
+            enemies.splice(0, enemies.length);
+            bubbles.splice(0, bubbles.length);
+            platforms.splice(0, platforms.length); // Clear old platforms
+            player.x = canvas.width / 2 - player.width / 2;
+            player.y = canvas.height - player.height - 10;
+
+            if (stageIndex >= stageData.length) {
+                gameMessage = "YOU WIN!";
+                messageTimer = 9999; // Show forever until reset
+                return;
+            }
+
+            const stage = stageData[stageIndex];
+            stage.platforms.forEach(p => {
+                platforms.push({ ...p, height: p.height || 20 });
+            });
+            stage.enemies.forEach(e => {
+                const enemy = {
+                    x: e.x,
+                    y: e.y,
+                    width: 40,
+                    height: 40,
+                    speed: e.speed,
+                    dx: e.speed * e.direction,
+                    dy: 0,
+                    color: '#ff5733',
+                    state: 'normal'
+                };
+                enemies.push(enemy);
+            });
+        }
+
+        function updateEnemies() {
+            enemies.forEach(enemy => {
+                if (enemy.state === 'trapped') {
+                    const trappingBubble = bubbles.find(b => b.trappedEnemy === enemy);
+                    if (trappingBubble) {
+                        enemy.x = trappingBubble.x - enemy.width / 2;
+                        enemy.y = trappingBubble.y - enemy.height / 2;
+                        enemy.dy = 0; // No gravity while trapped
+                    }
+                } else { // 'normal' state
+                    // Apply gravity first
+                    enemy.dy += GRAVITY;
+                    enemy.y += enemy.dy;
+
+                    // Platform collision for enemies
+                    let onPlatform = false;
+                    platforms.forEach(p => {
+                        if (enemy.dy > 0 &&
+                            enemy.x + enemy.width > p.x && enemy.x < p.x + p.width &&
+                            enemy.y + enemy.height >= p.y && enemy.y + enemy.height <= p.y + p.height + enemy.dy) {
+                            enemy.y = p.y - enemy.height;
+                            enemy.dy = 0;
+                            onPlatform = true;
+                        }
+                    });
+
+                    // Floor collision
+                    if (!onPlatform && enemy.y + enemy.height > canvas.height) {
+                        enemy.y = canvas.height - enemy.height;
+                        enemy.dy = 0;
+                    }
+
+                    // Basic AI: move left and right
+                    enemy.x += enemy.dx;
+
+                    // Wall collision
+                    if (enemy.x <= 0 && enemy.dx < 0) {
+                        enemy.dx *= -1;
+                    }
+                    if (enemy.x + enemy.width >= canvas.width && enemy.dx > 0) {
+                        enemy.dx *= -1;
+                    }
+                }
+            });
+        }
+
+        function drawEnemies() {
+            enemies.forEach(enemy => {
+                ctx.fillStyle = enemy.color;
+                ctx.fillRect(enemy.x, enemy.y, enemy.width, enemy.height);
+            });
+        }
+
+        function checkCollision(rect1, rect2) {
+            return rect1.x < rect2.x + rect2.width &&
+                   rect1.x + rect1.width > rect2.x &&
+                   rect1.y < rect2.y + rect2.height &&
+                   rect1.y + rect1.height > rect2.y;
+        }
+
+        function checkCircleRectCollision(circle, rect) {
+            const closestX = Math.max(rect.x, Math.min(circle.x, rect.x + rect.width));
+            const closestY = Math.max(rect.y, Math.min(circle.y, rect.y + rect.height));
+            const distanceX = circle.x - closestX;
+            const distanceY = circle.y - closestY;
+            const distanceSquared = (distanceX * distanceX) + (distanceY * distanceY);
+            return distanceSquared < (circle.radius * circle.radius);
+        }
+
+        function playerHit() {
+            // Prevent multiple hits in a row
+            if (player.invincible > 0) return;
+
+            lives--;
+            player.invincible = 120; // 2 seconds of invincibility
+
+            if (lives <= 0) {
+                gameMessage = "GAME OVER";
+                messageTimer = 9999; // Show forever until reset
+            } else {
+                // Reset player position
+                player.x = canvas.width / 2 - player.width / 2;
+                player.y = 100;
+                player.dx = 0;
+                player.dy = 0;
+            }
+        }
+
+        function resetLevel() {
+            lives = 3;
+            score = 0;
+            currentStage = 0;
+            messageTimer = 0;
+            gameMessage = '';
+            loadStage(currentStage);
+        }
+
+        function handleCollisions() {
+            // 1. Bubble-Enemy Collision
+            for (let i = bubbles.length - 1; i >= 0; i--) {
+                for (let j = enemies.length - 1; j >= 0; j--) {
+                    const bubble = bubbles[i];
+                    const enemy = enemies[j];
+
+                    // only untrapped bubbles can trap enemies
+                    if (!bubble.isTrapping && enemy.state === 'normal' && checkCircleRectCollision(bubble, enemy)) {
+                        enemy.state = 'trapped';
+                        enemy.trapTimer = 360; // 6 seconds at 60fps
+                        // The bubble is now "trapping" and will carry the enemy
+                        bubble.isTrapping = true;
+                        bubble.trappedEnemy = enemy;
+                        // a bubble can only trap one enemy
+                        break;
+                    }
+                }
+            }
+
+            // 2. Player-Enemy Collision
+            for (let i = enemies.length - 1; i >= 0; i--) {
+                const enemy = enemies[i];
+                if (checkCollision(player, enemy)) {
+                    if (enemy.state === 'trapped') {
+                        // Pop the enemy
+                        enemies.splice(i, 1);
+                        score += 100;
+                        // Find the bubble that was trapping this enemy and remove it
+                        for (let b_idx = bubbles.length - 1; b_idx >= 0; b_idx--) {
+                            if (bubbles[b_idx].trappedEnemy === enemy) {
+                                bubbles.splice(b_idx, 1);
+                                break;
+                            }
+                        }
+                    } else if (enemy.state === 'normal') {
+                        playerHit();
+                    }
+                }
+            }
+        }
+
+        function checkStageClear() {
+            if (enemies.length === 0 && messageTimer <= 0) {
+                currentStage++;
+                gameMessage = `STAGE ${currentStage + 1}`;
+                if (currentStage >= stageData.length) {
+                    gameMessage = "YOU WIN!";
+                }
+                messageTimer = 120; // Show message for 2 seconds
+
+                setTimeout(() => {
+                    loadStage(currentStage);
+                }, 1500); // Load next stage after 1.5 seconds
+            }
+
+            if (messageTimer > 0) {
+                messageTimer--;
+                if(messageTimer <= 0) {
+                    gameMessage = '';
+                }
+            }
+        }
+
+        function drawUI() {
+            ctx.fillStyle = 'white';
+            ctx.font = '24px "Courier New", Courier, monospace';
+            ctx.textAlign = 'left';
+            ctx.fillText('SCORE: ' + score, 20, 40);
+            ctx.textAlign = 'right';
+            ctx.fillText('LIVES: ' + lives, canvas.width - 20, 40);
+
+            if (messageTimer > 0 && gameMessage) {
+                ctx.fillStyle = 'yellow';
+                ctx.font = '60px "Courier New", Courier, monospace';
+                ctx.textAlign = 'center';
+                ctx.fillText(gameMessage, canvas.width / 2, canvas.height / 2);
+
+                if (lives <= 0 || currentStage >= stageData.length) {
+                    ctx.font = '20px "Courier New", Courier, monospace';
+                    ctx.fillText("Press any key to play again", canvas.width / 2, canvas.height / 2 + 50);
+                }
+            }
+        }
+
+        function gameLoop() {
+            clearCanvas();
+
+            checkStageClear();
+
+            if (messageTimer <= 0) {
+                handleCollisions();
+                updatePlayer();
+                updateBubbles();
+                updateEnemies();
+            }
+
+            drawPlatforms();
+            drawPlayer();
+            drawBubbles();
+            drawEnemies();
+            drawUI();
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Start the game
+        loadStage(currentStage);
+        gameLoop();
+    </script>
+</body>
+</html>
