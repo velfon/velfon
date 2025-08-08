@@ -222,19 +222,42 @@
         }
 
         function drawPlayer() {
-            // Flashing effect when invincible
-            if (player.invincible > 0) {
-                // Flash every 10 frames
-                if (Math.floor(player.invincible / 10) % 2 === 0) {
-                    ctx.globalAlpha = 0.5;
-                }
+            ctx.save();
+
+            const anchorX = player.x + player.width / 2;
+            const anchorY = player.y + player.height;
+            ctx.translate(anchorX, anchorY);
+
+            const scaleX = player.direction === 'right' ? 1 : -1;
+            ctx.scale(scaleX, 1);
+
+            if (player.invincible > 0 && Math.floor(player.invincible / 10) % 2 !== 0) {
+                ctx.globalAlpha = 0.5;
             }
 
-            ctx.fillStyle = player.color;
-            ctx.fillRect(player.x, player.y, player.width, player.height);
+            // Body
+            ctx.fillStyle = '#2ecc71'; // green
+            ctx.beginPath();
+            ctx.arc(0, -player.height * 0.4, player.width * 0.5, 0, Math.PI, true);
+            ctx.rect(-player.width * 0.5, -player.height * 0.4, player.width, player.height * 0.4);
+            ctx.fill();
 
-            // Reset alpha
-            ctx.globalAlpha = 1.0;
+            // Head
+            ctx.beginPath();
+            ctx.arc(player.width * 0.15, -player.height * 0.7, player.width * 0.4, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Eye
+            ctx.fillStyle = 'white';
+            ctx.beginPath();
+            ctx.arc(player.width * 0.3, -player.height * 0.75, player.width * 0.15, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = 'black';
+            ctx.beginPath();
+            ctx.arc(player.width * 0.33, -player.height * 0.75, player.width * 0.08, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.restore();
         }
 
         function updateBubbles() {
@@ -369,8 +392,27 @@
 
         function drawEnemies() {
             enemies.forEach(enemy => {
-                ctx.fillStyle = enemy.color;
+                ctx.fillStyle = enemy.state === 'normal' ? '#e74c3c' : '#c0392b'; // red / darker red
                 ctx.fillRect(enemy.x, enemy.y, enemy.width, enemy.height);
+
+                // Eyes
+                const eyeRadius = enemy.width * 0.15;
+                const eyeY = enemy.y + enemy.height * 0.4;
+                const eye1X = enemy.x + enemy.width * 0.25;
+                const eye2X = enemy.x + enemy.width * 0.75;
+
+                ctx.fillStyle = 'white';
+                ctx.beginPath();
+                ctx.arc(eye1X, eyeY, eyeRadius, 0, Math.PI * 2);
+                ctx.arc(eye2X, eyeY, eyeRadius, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.fillStyle = 'black';
+                ctx.beginPath();
+                const pupilXOffset = enemy.dx > 0 ? 2 : -2;
+                ctx.arc(eye1X + pupilXOffset, eyeY, eyeRadius * 0.5, 0, Math.PI * 2);
+                ctx.arc(eye2X + pupilXOffset, eyeY, eyeRadius * 0.5, 0, Math.PI * 2);
+                ctx.fill();
             });
         }
 
